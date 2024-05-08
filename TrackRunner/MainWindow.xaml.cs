@@ -6,18 +6,14 @@ using System.Windows.Shapes;
 
 namespace TrackRunner
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
     public partial class MainWindow : Window
     {
         private Point startPoint;
         private Point? firstPosition;
         private Point? lastPosition;
-        private bool isRunning = false;
-        private bool forceStop = false;
         private List<Line> trackLines = new List<Line>();
         private List<Line> pathLines = new List<Line>();
+        private Runner runner = new Runner();
 
         public MainWindow()
         {
@@ -89,116 +85,22 @@ namespace TrackRunner
 
         private async void OnStart(object sender, RoutedEventArgs e)
         {
-            isRunning = true;
-            var currentPoint = startPoint;
-            bool intersects;
-            Vector delta = new Vector(0, -10);
-
-            do
+            await foreach ((Point start, Point end) in runner.Start(startPoint, trackLines))
             {
-                intersects = true;
-                var point = currentPoint;
-                double angle = 0;
-                double angleModificator = 1;
-                Vector rotatedPointVector = delta;
-                PositionInfo positionInfo = GetPositionInfo(currentPoint, point + delta, angle);
-                if (positionInfo.DistanceLeft > positionInfo.DistanceRight)
-                {
-                    angleModificator = -1;
-                }
-
-                while (intersects && angle <= 360)
-                {
-                    (point, rotatedPointVector, intersects) = Move(currentPoint, delta, angle);
-
-                    if (intersects)
-                    {
-                        angle += (5 * angleModificator);
-                    }
-                }
-
-                positionInfo = GetPositionInfo(currentPoint, point, angle);
-                frontDistanceLabel.Text = positionInfo.DistanceFront.ToString();
-                leftDistanceLabel.Text = positionInfo.DistanceLeft.ToString();
-                rightDistanceLabel.Text = positionInfo.DistanceRight.ToString();
-                angleLabel.Text = positionInfo.AngleInDegrees.ToString();
-
-                currentPoint = point;
-                delta = rotatedPointVector;
-
-                await Task.Delay(800);
-            } while (!intersects && !forceStop);
-
-            isRunning = false;
-            forceStop = false;
+                var line = CreateLine(start, end, 2, Colors.DarkOrange);
+                pathLines.Add(line);
+                viewport.Children.Add(line);
+            }
         }
 
         private void OnReset(object sender, RoutedEventArgs e)
         {
-            if (isRunning)
-            {
-                forceStop = true;
-            }
+            runner.Stop();
 
             foreach (var l in pathLines)
             {
                 viewport.Children.Remove(l);
             }
-        }
-
-        private (Point point, Vector rotatedPointVector, bool intersects) Move(Point currentPoint, Vector delta, double angle)
-        {
-            Point point = currentPoint;
-            Point rotatedPoint = GeometryOperations.RotatePoint(point + delta, point, angle);
-            Vector rotatedPointVector = rotatedPoint - point;
-
-            point = rotatedPoint;
-
-            var line = CreateLine(currentPoint, point, 2, Colors.DarkOrange);
-            bool intersects = trackLines.Any(l => GeometryOperations.Intersect(line, l) != null);
-
-            //if (!intersects && !forceStop)
-            //{
-                pathLines.Add(line);
-                viewport.Children.Add(line);
-            //}
-
-            return (point, rotatedPointVector, intersects);
-        }
-
-        private PositionInfo GetPositionInfo(Point currentPoint, Point point, double angle)
-        {
-            var info = new PositionInfo
-            {
-                AngleInDegrees = angle
-            };
-
-            Vector frontDirection = point - currentPoint;
-            Vector leftDirection = new Vector(frontDirection.Y, -frontDirection.X);
-            Vector rightDirection = new Vector(-frontDirection.Y, frontDirection.X);
-
-            foreach (var l in trackLines)
-            {
-                double? frontDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, frontDirection, l);
-                if (frontDistance.HasValue && frontDistance.Value < info.DistanceFront)
-                {
-                    info.DistanceFront = frontDistance.Value;
-                }
-
-                double? leftDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, leftDirection, l);
-                if (leftDistance.HasValue && leftDistance.Value < info.DistanceLeft)
-                {
-                    info.DistanceLeft = leftDistance.Value;
-                }
-
-                double? rightDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, rightDirection, l);
-                if (rightDistance.HasValue && rightDistance.Value < info.DistanceRight)
-                {
-                    info.DistanceRight = rightDistance.Value;
-                }
-            }
-
-            return info;
         }
 
         private static Line CreateLine(Point p1, Point p2, double thickness, Color color)
