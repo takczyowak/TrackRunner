@@ -18,6 +18,7 @@ namespace TrackRunner
         public MainWindow()
         {
             InitializeComponent();
+            runner.Collision += OnRunnerCollision;
         }
 
         private void OnViewportLoaded(object sender, RoutedEventArgs e)
@@ -97,6 +98,14 @@ namespace TrackRunner
         {
             runner.Stop();
 
+            foreach (var l in pathLines)
+            {
+                viewport.Children.Remove(l);
+            }
+        }
+
+        private void OnRunnerCollision(object sender, EventArgs e)
+        {
             foreach (var l in pathLines)
             {
                 viewport.Children.Remove(l);

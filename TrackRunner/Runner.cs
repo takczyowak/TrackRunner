@@ -1,4 +1,5 @@
-﻿using System.Windows;
+﻿using System.Printing;
+using System.Windows;
 using System.Windows.Shapes;
 
 namespace TrackRunner
@@ -8,14 +9,41 @@ namespace TrackRunner
         private List<PositionInfo> trainData = new List<PositionInfo>();
         private IReadOnlyCollection<Line> trackLines;
         private bool forceStop;
+        private bool isRunning;
 
-        public bool IsRunning { get; private set; }
+        public event EventHandler Collision;
 
         public async IAsyncEnumerable<(Point start, Point end)> Start(Point startPoint, IReadOnlyCollection<Line> track)
         {
             trackLines = track;
             forceStop = false;
-            IsRunning = true;
+            isRunning = true;
+
+            await foreach ((Point start, Point end) in TrainingRun(startPoint))
+            {
+                yield return (start, end);
+            }
+
+            if (!isRunning)
+            {
+                yield break;
+            }
+
+            Collision?.Invoke(this, EventArgs.Empty);
+
+            await foreach ((Point start, Point end) in KeepRunning(startPoint))
+            {
+                yield return (start, end);
+            }
+        }
+
+        public void Stop()
+        {
+            forceStop = true;
+        }
+
+        private async IAsyncEnumerable<(Point start, Point end)> KeepRunning(Point startPoint)
+        {
             var currentPoint = startPoint;
             bool intersects;
             Vector delta = new Vector(0, -10);
@@ -55,14 +83,58 @@ namespace TrackRunner
                 await Task.Delay(500);
             } while (!intersects && !forceStop);
 
-            IsRunning = false;
+            isRunning = false;
             forceStop = false;
             trainData.Clear();
         }
 
-        public void Stop()
+        private async IAsyncEnumerable<(Point start, Point end)> TrainingRun(Point startPoint)
         {
-            forceStop = true;
+            var currentPoint = startPoint;
+            bool intersects;
+            Vector delta = new Vector(0, -10);
+
+            do
+            {
+                intersects = true;
+                var point = currentPoint;
+                double angle = 0;
+                double angleModificator = 1;
+                Vector rotatedPointVector = delta;
+                PositionInfo positionInfo = GetPositionInfo(currentPoint, point + delta, angle);
+                if (positionInfo.DistanceLeft > positionInfo.DistanceRight)
+                {
+                    angleModificator = -1;
+                }
+
+                bool didIntersect = false;
+                while (intersects && angle <= 360)
+                {
+                    (point, rotatedPointVector, intersects) = Move(currentPoint, delta, angle);
+
+                    if (intersects)
+                    {
+                        didIntersect = true;
+                        angle += (5 * angleModificator);
+                    }
+                    else
+                    {
+                        trainData.Add(GetPositionInfo(currentPoint, point, angle));
+                        if (didIntersect)
+                        {
+                            yield break;
+                        }
+                        yield return (currentPoint, point);
+                    }
+                }
+
+                currentPoint = point;
+                delta = rotatedPointVector;
+
+                await Task.Delay(500);
+            } while (!intersects && !forceStop);
+
+            isRunning = false;
         }
 
         private (Point point, Vector rotatedPointVector, bool intersects) Move(Point currentPoint, Vector delta, double angle)
