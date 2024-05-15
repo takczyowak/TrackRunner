@@ -1,15 +1,21 @@
-﻿using System.Printing;
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Shapes;
+using Microsoft.ML;
 
 namespace TrackRunner
 {
     public class Runner
     {
+        private MLContext mlContext;
         private List<PositionInfo> trainData = new List<PositionInfo>();
         private IReadOnlyCollection<Line> trackLines;
         private bool forceStop;
         private bool isRunning;
+
+        public Runner()
+        {
+            mlContext = new MLContext(seed: 0);
+        }
 
         public event EventHandler Collision;
 
@@ -30,7 +36,7 @@ namespace TrackRunner
             }
 
             Collision?.Invoke(this, EventArgs.Empty);
-
+            
             await foreach ((Point start, Point end) in KeepRunning(startPoint))
             {
                 yield return (start, end);
@@ -44,6 +50,7 @@ namespace TrackRunner
 
         private async IAsyncEnumerable<(Point start, Point end)> KeepRunning(Point startPoint)
         {
+            var predictionEngine = Train();
             var currentPoint = startPoint;
             bool intersects;
             Vector delta = new Vector(0, -10);
@@ -56,6 +63,8 @@ namespace TrackRunner
                 double angleModificator = 1;
                 Vector rotatedPointVector = delta;
                 PositionInfo positionInfo = GetPositionInfo(currentPoint, point + delta, angle);
+                var s = predictionEngine.Predict(positionInfo);
+
                 if (positionInfo.DistanceLeft > positionInfo.DistanceRight)
                 {
                     angleModificator = -1;
@@ -135,6 +144,17 @@ namespace TrackRunner
             } while (!intersects && !forceStop);
 
             isRunning = false;
+        }
+
+        private PredictionEngine<PositionInfo, PositionInfoAnglePrediction> Train()
+        {
+            var data = mlContext.Data.LoadFromEnumerable(trainData);
+            var pipeline = mlContext.Transforms.CopyColumns(outputColumnName: "Label", inputColumnName: nameof(PositionInfo.AngleInDegrees));
+            pipeline.Append(mlContext.Transforms.Concatenate("Features", nameof(PositionInfo.DistanceFront), nameof(PositionInfo.DistanceLeft), nameof(PositionInfo.DistanceRight)));
+            pipeline.Append(mlContext.Regression.Trainers.FastTree());
+            var model = pipeline.Fit(data);
+
+            return mlContext.Model.CreatePredictionEngine<PositionInfo, PositionInfoAnglePrediction>(model);
         }
 
         private (Point point, Vector rotatedPointVector, bool intersects) Move(Point currentPoint, Vector delta, double angle)
