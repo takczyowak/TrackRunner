@@ -1,163 +1,141 @@
 ﻿using System.Windows;
 using System.Windows.Shapes;
 using Microsoft.ML;
+using Microsoft.ML.Data;
+using Microsoft.ML.Trainers;
+using Microsoft.ML.Transforms;
 
 namespace TrackRunner
 {
     public class Runner
     {
         private MLContext mlContext;
-        private List<PositionInfo> trainData = new List<PositionInfo>();
+        private HashSet<PositionInfo> trainData = new HashSet<PositionInfo>();
         private IReadOnlyCollection<Line> trackLines;
         private bool forceStop;
         private bool isRunning;
-
-        public Runner()
-        {
-            mlContext = new MLContext(seed: 0);
-        }
+        private double bestDistance = double.MaxValue;
 
         public event EventHandler Collision;
 
-        public async IAsyncEnumerable<(Point start, Point end)> Start(Point startPoint, IReadOnlyCollection<Line> track)
+        public Runner()
+        {
+            Stop();
+        }
+
+        public async IAsyncEnumerable<(Point start, Point end)> Start(Point startPoint, Point endPoint, IReadOnlyCollection<Line> track)
         {
             trackLines = track;
             forceStop = false;
             isRunning = true;
 
-            await foreach ((Point start, Point end) in TrainingRun(startPoint))
+            while (!this.forceStop)
             {
-                yield return (start, end);
-            }
+                await foreach ((Point start, Point end) in KeepRunning(startPoint, endPoint))
+                {
+                    yield return (start, end);
+                }
 
-            if (!isRunning)
-            {
-                yield break;
-            }
-
-            Collision?.Invoke(this, EventArgs.Empty);
-            
-            await foreach ((Point start, Point end) in KeepRunning(startPoint))
-            {
-                yield return (start, end);
+                Collision?.Invoke(this, EventArgs.Empty);
             }
         }
 
         public void Stop()
         {
+            this.bestDistance = double.MaxValue;
+            this.trainData = new HashSet<PositionInfo>
+            {
+                new PositionInfo { AngleInDegrees = 360, DistanceFront = 1, DistanceLeft = 1, DistanceRight = 1 }
+            };
             forceStop = true;
         }
 
-        private async IAsyncEnumerable<(Point start, Point end)> KeepRunning(Point startPoint)
+        private async IAsyncEnumerable<(Point start, Point end)> KeepRunning(Point startPoint, Point endPoint)
         {
-            var predictionEngine = Train();
-            var currentPoint = startPoint;
+            List<PositionInfo> potentialTrainData = new List<PositionInfo>();
+            PredictionEngine<PositionInfo, PositionInfoAnglePrediction> predictionEngine = Train();
+            Point currentPoint = startPoint;
             bool intersects;
-            Vector delta = new Vector(0, -10);
+            var delta = new Vector(0, -10);
 
             do
             {
                 intersects = true;
-                var point = currentPoint;
-                double angle = 0;
-                double angleModificator = 1;
+                Point point = currentPoint;
+                float angle = 360;
+                float angleModificator = 1;
                 Vector rotatedPointVector = delta;
                 PositionInfo positionInfo = GetPositionInfo(currentPoint, point + delta, angle);
-                var s = predictionEngine.Predict(positionInfo);
 
-                if (positionInfo.DistanceLeft > positionInfo.DistanceRight)
+                PositionInfoAnglePrediction? s = predictionEngine.Predict(positionInfo);
+                angle = s.AngleInDegrees;
+                (point, rotatedPointVector, intersects) = Move(currentPoint, delta, angle);
+
+                if (!intersects)
                 {
-                    angleModificator = -1;
+                    yield return (currentPoint, point);
                 }
 
-                while (intersects && angle <= 360)
+                if (intersects)
                 {
-                    (point, rotatedPointVector, intersects) = Move(currentPoint, delta, angle);
+                    if (positionInfo.DistanceLeft > positionInfo.DistanceRight)
+                    {
+                        angleModificator = -1;
+                    }
 
                     if (intersects)
                     {
-                        angle += (5 * angleModificator);
-                    }
-                    else
-                    {
-                        yield return (currentPoint, point);
-                    }
-                }
+                        angle += (15 * angleModificator);
+                        (point, rotatedPointVector, intersects) = Move(currentPoint, delta, angle);
 
-                positionInfo = GetPositionInfo(currentPoint, point, angle);
-
-                currentPoint = point;
-                delta = rotatedPointVector;
-
-                await Task.Delay(500);
-            } while (!intersects && !forceStop);
-
-            isRunning = false;
-            forceStop = false;
-            trainData.Clear();
-        }
-
-        private async IAsyncEnumerable<(Point start, Point end)> TrainingRun(Point startPoint)
-        {
-            var currentPoint = startPoint;
-            bool intersects;
-            Vector delta = new Vector(0, -10);
-
-            do
-            {
-                intersects = true;
-                var point = currentPoint;
-                double angle = 0;
-                double angleModificator = 1;
-                Vector rotatedPointVector = delta;
-                PositionInfo positionInfo = GetPositionInfo(currentPoint, point + delta, angle);
-                if (positionInfo.DistanceLeft > positionInfo.DistanceRight)
-                {
-                    angleModificator = -1;
-                }
-
-                bool didIntersect = false;
-                while (intersects && angle <= 360)
-                {
-                    (point, rotatedPointVector, intersects) = Move(currentPoint, delta, angle);
-
-                    if (intersects)
-                    {
-                        didIntersect = true;
-                        angle += (5 * angleModificator);
-                    }
-                    else
-                    {
-                        trainData.Add(GetPositionInfo(currentPoint, point, angle));
-                        if (didIntersect)
+                        potentialTrainData.Add(GetPositionInfo(currentPoint, point, angle));
+                        double distance = Math.Pow(point.X - endPoint.X, 2) + Math.Pow(point.Y - endPoint.Y, 2);
+                        if (distance < this.bestDistance)
                         {
-                            yield break;
+                            foreach (PositionInfo info in potentialTrainData)
+                            {
+                                this.trainData.Add(info);
+                            }
+                            this.bestDistance = distance;
                         }
-                        yield return (currentPoint, point);
+
+                        yield break;
                     }
                 }
+
+                potentialTrainData.Add(GetPositionInfo(currentPoint, point, angle));
 
                 currentPoint = point;
                 delta = rotatedPointVector;
 
-                await Task.Delay(500);
+                await Task.Delay(50);
             } while (!intersects && !forceStop);
 
             isRunning = false;
+            //forceStop = false;
+            //trainData.Clear();
         }
 
         private PredictionEngine<PositionInfo, PositionInfoAnglePrediction> Train()
         {
-            var data = mlContext.Data.LoadFromEnumerable(trainData);
-            var pipeline = mlContext.Transforms.CopyColumns(outputColumnName: "Label", inputColumnName: nameof(PositionInfo.AngleInDegrees));
-            pipeline.Append(mlContext.Transforms.Concatenate("Features", nameof(PositionInfo.DistanceFront), nameof(PositionInfo.DistanceLeft), nameof(PositionInfo.DistanceRight)));
-            pipeline.Append(mlContext.Regression.Trainers.FastTree());
-            var model = pipeline.Fit(data);
+            mlContext = new MLContext();
 
-            return mlContext.Model.CreatePredictionEngine<PositionInfo, PositionInfoAnglePrediction>(model);
+            // Load Data
+            IDataView data = mlContext.Data.LoadFromEnumerable(trainData);
+
+            // Define data preparation estimator
+            var pipelineEstimator =
+                mlContext.Transforms.Concatenate("Features", new string[] { nameof(PositionInfo.DistanceFront), nameof(PositionInfo.DistanceLeft), nameof(PositionInfo.DistanceRight) })
+                    .Append(mlContext.Transforms.NormalizeMinMax("Features"))
+                    .Append(mlContext.Regression.Trainers.LbfgsPoissonRegression());
+
+            // Train model
+            ITransformer trainedModel = pipelineEstimator.Fit(data);
+
+            return mlContext.Model.CreatePredictionEngine<PositionInfo, PositionInfoAnglePrediction>(trainedModel);
         }
 
-        private (Point point, Vector rotatedPointVector, bool intersects) Move(Point currentPoint, Vector delta, double angle)
+        private (Point point, Vector rotatedPointVector, bool intersects) Move(Point currentPoint, Vector delta, float angle)
         {
             Point point = currentPoint;
             Point rotatedPoint = GeometryOperations.RotatePoint(point + delta, point, angle);
@@ -171,7 +149,7 @@ namespace TrackRunner
             return (point, rotatedPointVector, intersects);
         }
 
-        private PositionInfo GetPositionInfo(Point currentPoint, Point point, double angle)
+        private PositionInfo GetPositionInfo(Point currentPoint, Point point, float angle)
         {
             var info = new PositionInfo
             {
@@ -184,19 +162,19 @@ namespace TrackRunner
 
             foreach (var l in trackLines)
             {
-                double? frontDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, frontDirection, l);
+                float? frontDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, frontDirection, l);
                 if (frontDistance.HasValue && frontDistance.Value < info.DistanceFront)
                 {
                     info.DistanceFront = frontDistance.Value;
                 }
 
-                double? leftDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, leftDirection, l);
+                float? leftDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, leftDirection, l);
                 if (leftDistance.HasValue && leftDistance.Value < info.DistanceLeft)
                 {
                     info.DistanceLeft = leftDistance.Value;
                 }
 
-                double? rightDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, rightDirection, l);
+                float? rightDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, rightDirection, l);
                 if (rightDistance.HasValue && rightDistance.Value < info.DistanceRight)
                 {
                     info.DistanceRight = rightDistance.Value;

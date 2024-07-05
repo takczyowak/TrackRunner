@@ -27,7 +27,7 @@ namespace TrackRunner
             return null; // No collision
         }
 
-        public static double? GetRayToLineIntersectionDistance(Point rayOrigin, Vector rayDirection, Line line) 
+        public static float? GetRayToLineIntersectionDistance(Point rayOrigin, Vector rayDirection, Line line) 
         {
             var p1 = new Point(line.X1, line.Y1);
             var p2 = new Point(line.X2, line.Y2);
@@ -44,12 +44,12 @@ namespace TrackRunner
             var t2 = (v1 * v3) / dot;
 
             if (t1 >= 0.0 && (t2 >= 0.0 && t2 <= 1.0))
-                return t1;
+                return (float?)t1;
 
             return null;
         }
 
-        public static Point RotatePoint(Point pointToRotate, Point centerPoint, double angleInDegrees)
+        public static Point RotatePoint(Point pointToRotate, Point centerPoint, float angleInDegrees)
         {
             double angleInRadians = angleInDegrees * (Math.PI / 180);
             double cosTheta = Math.Cos(angleInRadians);

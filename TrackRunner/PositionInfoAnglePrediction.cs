@@ -1,7 +1,10 @@
-﻿namespace TrackRunner
+﻿using Microsoft.ML.Data;
+
+namespace TrackRunner
 {
     public class PositionInfoAnglePrediction
     {
-        public double AngleInDegrees { get; set; }
+        [ColumnName("Score")]
+        public float AngleInDegrees { get; set; }
     }
 }
