@@ -13,7 +13,6 @@ namespace TrackRunner
         private HashSet<PositionInfo> trainData = new HashSet<PositionInfo>();
         private IReadOnlyCollection<Line> trackLines;
         private bool forceStop;
-        private bool isRunning;
         private double bestDistance = double.MaxValue;
         private PositionInfo lastIntersectingPositionInfo;
         private int lastMaxStep;
@@ -29,7 +28,6 @@ namespace TrackRunner
         {
             trackLines = track;
             forceStop = false;
-            isRunning = true;
 
             while (!this.forceStop)
             {
@@ -115,8 +113,6 @@ namespace TrackRunner
 
                 await Task.Delay(10);
             } while (!intersects && !forceStop);
-
-            isRunning = false;
         }
 
         private PredictionEngine<PositionInfo, PositionInfoAnglePrediction> Train()
@@ -130,7 +126,7 @@ namespace TrackRunner
             var pipelineEstimator =
                 mlContext.Transforms.Concatenate("Features", new string[] { nameof(PositionInfo.DistanceFront), nameof(PositionInfo.DistanceLeft), nameof(PositionInfo.DistanceRight) })
                     .Append(mlContext.Transforms.NormalizeMinMax("Features"))
-                    .Append(mlContext.Regression.Trainers.LbfgsPoissonRegression());
+                    .Append(mlContext.Regression.Trainers.FastTree());
 
             // Train model
             ITransformer trainedModel = pipelineEstimator.Fit(data);
