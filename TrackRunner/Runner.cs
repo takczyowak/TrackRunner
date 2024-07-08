@@ -15,6 +15,8 @@ namespace TrackRunner
         private bool forceStop;
         private bool isRunning;
         private double bestDistance = double.MaxValue;
+        private PositionInfo lastIntersectingPositionInfo;
+        private int lastMaxStep;
 
         public event EventHandler Collision;
 
@@ -57,10 +59,11 @@ namespace TrackRunner
             Point currentPoint = startPoint;
             bool intersects;
             var delta = new Vector(0, -10);
+            int step = 0;
 
             do
             {
-                intersects = true;
+                ++step;
                 Point point = currentPoint;
                 float angle = 360;
                 float angleModificator = 1;
@@ -75,32 +78,34 @@ namespace TrackRunner
                 {
                     yield return (currentPoint, point);
                 }
-
-                if (intersects)
+                else
                 {
                     if (positionInfo.DistanceLeft > positionInfo.DistanceRight)
                     {
                         angleModificator = -1;
                     }
 
-                    if (intersects)
+                    if (this.lastIntersectingPositionInfo != null && this.lastMaxStep == step)
                     {
-                        angle += (15 * angleModificator);
-                        (point, rotatedPointVector, intersects) = Move(currentPoint, delta, angle);
-
-                        potentialTrainData.Add(GetPositionInfo(currentPoint, point, angle));
-                        double distance = Math.Pow(point.X - endPoint.X, 2) + Math.Pow(point.Y - endPoint.Y, 2);
-                        if (distance < this.bestDistance)
-                        {
-                            foreach (PositionInfo info in potentialTrainData)
-                            {
-                                this.trainData.Add(info);
-                            }
-                            this.bestDistance = distance;
-                        }
-
-                        yield break;
+                        angle = this.lastIntersectingPositionInfo.AngleInDegrees;
                     }
+
+                    lastMaxStep = step;
+                    angle += (5 * angleModificator);
+                    (point, rotatedPointVector, intersects) = Move(currentPoint, delta, angle);
+                    positionInfo.AngleInDegrees = angle;
+
+                    lastIntersectingPositionInfo = positionInfo;
+                    potentialTrainData.Add(positionInfo);
+
+                    double distance = Math.Pow(currentPoint.X - endPoint.X, 2) + Math.Pow(currentPoint.Y - endPoint.Y, 2);
+                    foreach (PositionInfo info in potentialTrainData)
+                    {
+                        this.trainData.Add(info);
+                    }
+                    this.bestDistance = distance;
+
+                    yield break;
                 }
 
                 potentialTrainData.Add(GetPositionInfo(currentPoint, point, angle));
@@ -108,12 +113,10 @@ namespace TrackRunner
                 currentPoint = point;
                 delta = rotatedPointVector;
 
-                await Task.Delay(50);
+                await Task.Delay(10);
             } while (!intersects && !forceStop);
 
             isRunning = false;
-            //forceStop = false;
-            //trainData.Clear();
         }
 
         private PredictionEngine<PositionInfo, PositionInfoAnglePrediction> Train()
