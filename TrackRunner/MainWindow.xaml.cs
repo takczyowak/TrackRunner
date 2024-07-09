@@ -9,7 +9,6 @@ namespace TrackRunner
     public partial class MainWindow : Window
     {
         private Point startPoint;
-        private Point endPoint;
         private Point? firstPosition;
         private Point? lastPosition;
         private List<Line> trackLines = new List<Line>();
@@ -31,19 +30,9 @@ namespace TrackRunner
             startPointCircle.Height = 8;
             startPoint = new Point(viewport.ActualWidth / 2, viewport.ActualHeight * 0.9);
 
-            var endPointCircle = new Ellipse();
-            endPointCircle.Stroke = new SolidColorBrush(Colors.MediumVioletRed);
-            endPointCircle.StrokeThickness = 4;
-            endPointCircle.Width = 8;
-            endPointCircle.Height = 8;
-            endPoint = new Point(viewport.ActualWidth / 2, viewport.ActualHeight * 0.1);
-
             Canvas.SetLeft(startPointCircle, startPoint.X - 4);
             Canvas.SetTop(startPointCircle, startPoint.Y - 4);
-            Canvas.SetLeft(endPointCircle, endPoint.X - 4);
-            Canvas.SetTop(endPointCircle, endPoint.Y - 4);
             viewport.Children.Add(startPointCircle);
-            viewport.Children.Add(endPointCircle);
         }
 
         private void OnViewportMouseDown(object sender, MouseButtonEventArgs e)
@@ -98,7 +87,7 @@ namespace TrackRunner
 
         private async void OnStart(object sender, RoutedEventArgs e)
         {
-            await foreach ((Point start, Point end) in runner.Start(startPoint, endPoint, trackLines))
+            await foreach ((Point start, Point end) in runner.Start(startPoint, trackLines))
             {
                 var line = CreateLine(start, end, 2, Colors.DarkOrange);
                 pathLines.Add(line);

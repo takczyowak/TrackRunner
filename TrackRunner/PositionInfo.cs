@@ -8,10 +8,7 @@ namespace TrackRunner
         public float DistanceFront { get; set; } = float.MaxValue;
 
         [LoadColumn(1)]
-        public float DistanceLeft { get; set; } = float.MaxValue;
-
-        [LoadColumn(2)]
-        public float DistanceRight { get; set; } = float.MaxValue;
+        public float Direction { get; set; } = 1;
 
         [ColumnName("Label")]
         public float AngleInDegrees { get; set; }
@@ -29,8 +26,7 @@ namespace TrackRunner
             }
 
             return DistanceFront.Equals(other.DistanceFront)
-                && DistanceLeft.Equals(other.DistanceLeft)
-                && DistanceRight.Equals(other.DistanceRight)
+                && Direction.Equals(other.Direction)
                 && AngleInDegrees.Equals(other.AngleInDegrees);
         }
 
@@ -56,7 +52,7 @@ namespace TrackRunner
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(DistanceFront, DistanceLeft, DistanceRight, AngleInDegrees);
+            return HashCode.Combine(DistanceFront, Direction, AngleInDegrees);
         }
     }
 }

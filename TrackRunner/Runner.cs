@@ -1,9 +1,6 @@
 ﻿using System.Windows;
 using System.Windows.Shapes;
 using Microsoft.ML;
-using Microsoft.ML.Data;
-using Microsoft.ML.Trainers;
-using Microsoft.ML.Transforms;
 
 namespace TrackRunner
 {
@@ -13,7 +10,6 @@ namespace TrackRunner
         private HashSet<PositionInfo> trainData = new HashSet<PositionInfo>();
         private IReadOnlyCollection<Line> trackLines;
         private bool forceStop;
-        private double bestDistance = double.MaxValue;
         private PositionInfo lastIntersectingPositionInfo;
         private int lastMaxStep;
 
@@ -24,14 +20,14 @@ namespace TrackRunner
             Stop();
         }
 
-        public async IAsyncEnumerable<(Point start, Point end)> Start(Point startPoint, Point endPoint, IReadOnlyCollection<Line> track)
+        public async IAsyncEnumerable<(Point start, Point end)> Start(Point startPoint, IReadOnlyCollection<Line> track)
         {
             trackLines = track;
             forceStop = false;
 
             while (!this.forceStop)
             {
-                await foreach ((Point start, Point end) in KeepRunning(startPoint, endPoint))
+                await foreach ((Point start, Point end) in KeepRunning(startPoint))
                 {
                     yield return (start, end);
                 }
@@ -42,15 +38,14 @@ namespace TrackRunner
 
         public void Stop()
         {
-            this.bestDistance = double.MaxValue;
             this.trainData = new HashSet<PositionInfo>
             {
-                new PositionInfo { AngleInDegrees = 360, DistanceFront = 1, DistanceLeft = 1, DistanceRight = 1 }
+                new PositionInfo { AngleInDegrees = 360, DistanceFront = 1, Direction = 1 }
             };
             forceStop = true;
         }
 
-        private async IAsyncEnumerable<(Point start, Point end)> KeepRunning(Point startPoint, Point endPoint)
+        private async IAsyncEnumerable<(Point start, Point end)> KeepRunning(Point startPoint)
         {
             List<PositionInfo> potentialTrainData = new List<PositionInfo>();
             PredictionEngine<PositionInfo, PositionInfoAnglePrediction> predictionEngine = Train();
@@ -65,7 +60,7 @@ namespace TrackRunner
                 Point point = currentPoint;
                 float angle = 360;
                 float angleModificator = 1;
-                Vector rotatedPointVector = delta;
+                Vector rotatedPointVector;
                 PositionInfo positionInfo = GetPositionInfo(currentPoint, point + delta, angle);
 
                 PositionInfoAnglePrediction? s = predictionEngine.Predict(positionInfo);
@@ -78,7 +73,7 @@ namespace TrackRunner
                 }
                 else
                 {
-                    if (positionInfo.DistanceLeft > positionInfo.DistanceRight)
+                    if (positionInfo.Direction < 1)
                     {
                         angleModificator = -1;
                     }
@@ -88,21 +83,17 @@ namespace TrackRunner
                         angle = this.lastIntersectingPositionInfo.AngleInDegrees;
                     }
 
-                    lastMaxStep = step;
                     angle += (5 * angleModificator);
-                    (point, rotatedPointVector, intersects) = Move(currentPoint, delta, angle);
                     positionInfo.AngleInDegrees = angle;
-
-                    lastIntersectingPositionInfo = positionInfo;
                     potentialTrainData.Add(positionInfo);
 
-                    double distance = Math.Pow(currentPoint.X - endPoint.X, 2) + Math.Pow(currentPoint.Y - endPoint.Y, 2);
                     foreach (PositionInfo info in potentialTrainData)
                     {
                         this.trainData.Add(info);
                     }
-                    this.bestDistance = distance;
 
+                    lastIntersectingPositionInfo = positionInfo;
+                    lastMaxStep = step;
                     yield break;
                 }
 
@@ -124,9 +115,9 @@ namespace TrackRunner
 
             // Define data preparation estimator
             var pipelineEstimator =
-                mlContext.Transforms.Concatenate("Features", new string[] { nameof(PositionInfo.DistanceFront), nameof(PositionInfo.DistanceLeft), nameof(PositionInfo.DistanceRight) })
+                mlContext.Transforms.Concatenate("Features", new string[] { nameof(PositionInfo.DistanceFront), nameof(PositionInfo.Direction) })
                     .Append(mlContext.Transforms.NormalizeMinMax("Features"))
-                    .Append(mlContext.Regression.Trainers.FastTree());
+                    .Append(mlContext.Regression.Trainers.LbfgsPoissonRegression());
 
             // Train model
             ITransformer trainedModel = pipelineEstimator.Fit(data);
@@ -152,12 +143,16 @@ namespace TrackRunner
         {
             var info = new PositionInfo
             {
+                Direction = 1,
                 AngleInDegrees = angle
             };
 
             Vector frontDirection = point - currentPoint;
             Vector leftDirection = new Vector(frontDirection.Y, -frontDirection.X);
             Vector rightDirection = new Vector(-frontDirection.Y, frontDirection.X);
+
+            float leftDistance = float.MaxValue;
+            float rightDistance = float.MaxValue;
 
             foreach (var l in trackLines)
             {
@@ -167,17 +162,22 @@ namespace TrackRunner
                     info.DistanceFront = frontDistance.Value;
                 }
 
-                float? leftDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, leftDirection, l);
-                if (leftDistance.HasValue && leftDistance.Value < info.DistanceLeft)
+                float? left = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, leftDirection, l);
+                float? right = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, rightDirection, l);
+                if (left < leftDistance)
                 {
-                    info.DistanceLeft = leftDistance.Value;
+                    leftDistance = left.Value;
                 }
 
-                float? rightDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, rightDirection, l);
-                if (rightDistance.HasValue && rightDistance.Value < info.DistanceRight)
+                if (right < rightDistance)
                 {
-                    info.DistanceRight = rightDistance.Value;
+                    rightDistance = right.Value;
                 }
+            }
+
+            if (info.DistanceFront < 3)
+            {
+                info.Direction = rightDistance / (leftDistance + rightDistance) * 2.0f;
             }
 
             return info;
