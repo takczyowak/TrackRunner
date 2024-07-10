@@ -2,7 +2,7 @@
 
 namespace TrackRunner.Runners.LinearRegression;
 
-public sealed class PositionInfoAnglePrediction
+public sealed class AnglePrediction
 {
     [ColumnName("Score")]
     public float AngleInDegrees { get; set; }

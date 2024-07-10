@@ -5,21 +5,21 @@ namespace TrackRunner.Runners;
 
 public static class GeometryOperations
 {
-    public static Point? Intersect(Line l1, Line l2)
+    public static Point? Intersect((Point start, Point end) l1, (Point start, Point end) l2)
     {
-        double firstLineSlopeX = l1.X2 - l1.X1;
-        double firstLineSlopeY = l1.Y2 - l1.Y1;
+        double firstLineSlopeX = l1.end.X - l1.start.X;
+        double firstLineSlopeY = l1.end.Y - l1.start.Y;
 
-        double secondLineSlopeX = l2.X2 - l2.X1;
-        double secondLineSlopeY = l2.Y2 - l2.Y1;
+        double secondLineSlopeX = l2.end.X - l2.start.X;
+        double secondLineSlopeY = l2.end.Y - l2.start.Y;
 
-        double s = (-firstLineSlopeY * (l1.X1 - l2.X1) + firstLineSlopeX * (l1.Y1 - l2.Y1)) / (-secondLineSlopeX * firstLineSlopeY + firstLineSlopeX * secondLineSlopeY);
-        double t = (secondLineSlopeX * (l1.Y1 - l2.Y1) - secondLineSlopeY * (l1.X1 - l2.X1)) / (-secondLineSlopeX * firstLineSlopeY + firstLineSlopeX * secondLineSlopeY);
+        double s = (-firstLineSlopeY * (l1.start.X - l2.start.X) + firstLineSlopeX * (l1.start.Y - l2.start.Y)) / (-secondLineSlopeX * firstLineSlopeY + firstLineSlopeX * secondLineSlopeY);
+        double t = (secondLineSlopeX * (l1.start.Y - l2.start.Y) - secondLineSlopeY * (l1.start.X - l2.start.X)) / (-secondLineSlopeX * firstLineSlopeY + firstLineSlopeX * secondLineSlopeY);
 
         if (s >= 0 && s <= 1 && t >= 0 && t <= 1)
         {
-            double intersectionPointX = l1.X1 + t * firstLineSlopeX;
-            double intersectionPointY = l1.Y1 + t * firstLineSlopeY;
+            double intersectionPointX = l1.start.X + t * firstLineSlopeX;
+            double intersectionPointY = l1.start.Y + t * firstLineSlopeY;
 
             return new Point(intersectionPointX, intersectionPointY);
         }
@@ -27,12 +27,10 @@ public static class GeometryOperations
         return null; // No collision
     }
 
-    public static float? GetRayToLineIntersectionDistance(Point rayOrigin, Vector rayDirection, Line line)
+    public static float? GetRayToLineIntersectionDistance(Point rayOrigin, Vector rayDirection, (Point start, Point end) line)
     {
-        var p1 = new Point(line.X1, line.Y1);
-        var p2 = new Point(line.X2, line.Y2);
-        Vector v1 = rayOrigin - p1;
-        Vector v2 = p2 - p1;
+        Vector v1 = rayOrigin - line.start;
+        Vector v2 = line.end - line.start;
         var v3 = new Vector(-rayDirection.Y, rayDirection.X);
 
         double dot = v2 * v3;

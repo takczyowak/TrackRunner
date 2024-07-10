@@ -99,14 +99,21 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnStart(object sender, RoutedEventArgs e)
+    private void OnStart(object sender, RoutedEventArgs e)
     {
-        await foreach ((Point start, Point end) in this.linearRegressionRunner.Start(this.startPoint, this.trackLines))
+        void drawLine(Point start, Point end, Color color)
         {
-            Line line = CreateLine(start, end, 2, Colors.DarkOrange);
-            this.pathLines.Add(line);
-            viewport.Children.Add(line);
+            Application.Current.Dispatcher.Invoke(
+                new Action(
+                    () =>
+                    {
+                        Line line = CreateLine(start, end, 2, color);
+                        this.pathLines.Add(line);
+                        viewport.Children.Add(line);
+                    }));
         }
+
+        this.linearRegressionRunner.Start(this.startPoint, this.trackLines, drawLine);
     }
 
     private void OnReset(object sender, RoutedEventArgs e)
@@ -121,9 +128,14 @@ public partial class MainWindow : Window
 
     private void OnLinearRegressionRunnerCollision(object sender, EventArgs e)
     {
-        foreach (Line l in this.pathLines)
-        {
-            viewport.Children.Remove(l);
-        }
+        Application.Current.Dispatcher.Invoke(
+            new Action(
+                () =>
+                {
+                    foreach (Line l in this.pathLines)
+                    {
+                        viewport.Children.Remove(l);
+                    }
+                }));
     }
 }

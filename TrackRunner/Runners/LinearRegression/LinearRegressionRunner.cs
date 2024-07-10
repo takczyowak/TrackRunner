@@ -1,4 +1,5 @@
 ﻿using System.Windows;
+using System.Windows.Media;
 using System.Windows.Shapes;
 using Microsoft.ML;
 using Microsoft.ML.Data;
@@ -10,8 +11,9 @@ public sealed class LinearRegressionRunner
 {
     private MLContext mlContext;
     private HashSet<PositionInfo> trainData = new();
-    private IReadOnlyCollection<Line> trackLines;
+    private IReadOnlyCollection<(Point start, Point end)> trackLines;
     private bool forceStop;
+    private bool isRunning;
     private PositionInfo lastIntersectingPositionInfo;
     private int lastMaxStep;
 
@@ -22,20 +24,27 @@ public sealed class LinearRegressionRunner
 
     public event EventHandler Collision;
 
-    public async IAsyncEnumerable<(Point start, Point end)> Start(Point startPoint, IReadOnlyCollection<Line> track)
+    public void Start(Point startPoint, IReadOnlyCollection<Line> track, Action<Point, Point, Color> drawLine)
     {
-        this.trackLines = track;
+        this.trackLines = track.Select(t => (new Point(t.X1, t.Y1), new Point(t.X2, t.Y2))).ToArray();
         this.forceStop = false;
 
-        while (!this.forceStop)
-        {
-            await foreach ((Point start, Point end) in KeepRunning(startPoint))
+        Task.Run(
+            async () =>
             {
-                yield return (start, end);
-            }
+                this.isRunning = true;
+                while (!this.forceStop)
+                {
+                    await foreach ((Point start, Point end) in KeepRunning(startPoint))
+                    {
+                        drawLine(start, end, Colors.DarkOrange);
+                    }
 
-            Collision?.Invoke(this, EventArgs.Empty);
-        }
+                    Collision?.Invoke(this, EventArgs.Empty);
+                }
+
+                this.isRunning = false;
+            });
     }
 
     public void Stop()
@@ -47,22 +56,10 @@ public sealed class LinearRegressionRunner
         this.forceStop = true;
     }
 
-    private static Line CreateLine(Point p1, Point p2, double thickness)
-    {
-        var line = new Line();
-        line.StrokeThickness = thickness;
-        line.X1 = p1.X;
-        line.X2 = p2.X;
-        line.Y1 = p1.Y;
-        line.Y2 = p2.Y;
-
-        return line;
-    }
-
     private async IAsyncEnumerable<(Point start, Point end)> KeepRunning(Point startPoint)
     {
         var potentialTrainData = new List<PositionInfo>();
-        PredictionEngine<PositionInfo, PositionInfoAnglePrediction> predictionEngine = Train();
+        PredictionEngine<PositionInfo, AnglePrediction> predictionEngine = Train();
         Point currentPoint = startPoint;
         bool intersects;
         var delta = new Vector(0, -10);
@@ -77,7 +74,7 @@ public sealed class LinearRegressionRunner
             Vector rotatedPointVector;
             PositionInfo positionInfo = GetPositionInfo(currentPoint, point + delta, angle);
 
-            PositionInfoAnglePrediction? s = predictionEngine.Predict(positionInfo);
+            AnglePrediction? s = predictionEngine.Predict(positionInfo);
             angle = s.AngleInDegrees;
             (point, rotatedPointVector, intersects) = Move(currentPoint, delta, angle);
 
@@ -120,7 +117,7 @@ public sealed class LinearRegressionRunner
         } while (!intersects && !this.forceStop);
     }
 
-    private PredictionEngine<PositionInfo, PositionInfoAnglePrediction> Train()
+    private PredictionEngine<PositionInfo, AnglePrediction> Train()
     {
         this.mlContext = new MLContext();
 
@@ -136,7 +133,7 @@ public sealed class LinearRegressionRunner
         // Train model
         ITransformer trainedModel = pipelineEstimator.Fit(data);
 
-        return this.mlContext.Model.CreatePredictionEngine<PositionInfo, PositionInfoAnglePrediction>(trainedModel);
+        return this.mlContext.Model.CreatePredictionEngine<PositionInfo, AnglePrediction>(trainedModel);
     }
 
     private (Point point, Vector rotatedPointVector, bool intersects) Move(Point currentPoint, Vector delta, float angle)
@@ -146,9 +143,7 @@ public sealed class LinearRegressionRunner
         Vector rotatedPointVector = rotatedPoint - point;
 
         point = rotatedPoint;
-
-        Line line = CreateLine(currentPoint, point, 2);
-        bool intersects = this.trackLines.Any(l => GeometryOperations.Intersect(line, l) != null);
+        bool intersects = this.trackLines.Any(l => GeometryOperations.Intersect((currentPoint, point), l) != null);
 
         return (point, rotatedPointVector, intersects);
     }
@@ -168,7 +163,7 @@ public sealed class LinearRegressionRunner
         float leftDistance = float.MaxValue;
         float rightDistance = float.MaxValue;
 
-        foreach (Line l in this.trackLines)
+        foreach ((Point start, Point end) l in this.trackLines)
         {
             float? frontDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, frontDirection, l);
             if (frontDistance.HasValue && frontDistance.Value < info.DistanceFront)
