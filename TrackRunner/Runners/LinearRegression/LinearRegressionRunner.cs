@@ -1,24 +1,26 @@
 ﻿using System.Windows;
 using System.Windows.Shapes;
 using Microsoft.ML;
+using Microsoft.ML.Data;
+using Microsoft.ML.Trainers;
 
 namespace TrackRunner.Runners.LinearRegression;
 
 public sealed class LinearRegressionRunner
 {
     private MLContext mlContext;
-    private HashSet<PositionInfo> trainData = new HashSet<PositionInfo>();
+    private HashSet<PositionInfo> trainData = new();
     private IReadOnlyCollection<Line> trackLines;
     private bool forceStop;
     private PositionInfo lastIntersectingPositionInfo;
     private int lastMaxStep;
 
-    public event EventHandler Collision;
-
     public LinearRegressionRunner()
     {
         Stop();
     }
+
+    public event EventHandler Collision;
 
     public async IAsyncEnumerable<(Point start, Point end)> Start(Point startPoint, IReadOnlyCollection<Line> track)
     {
@@ -40,14 +42,26 @@ public sealed class LinearRegressionRunner
     {
         this.trainData = new HashSet<PositionInfo>
         {
-            new PositionInfo { AngleInDegrees = 360, DistanceFront = 1, Direction = 1 }
+            new() { AngleInDegrees = 360, DistanceFront = 1, Direction = 1 }
         };
         this.forceStop = true;
     }
 
+    private static Line CreateLine(Point p1, Point p2, double thickness)
+    {
+        var line = new Line();
+        line.StrokeThickness = thickness;
+        line.X1 = p1.X;
+        line.X2 = p2.X;
+        line.Y1 = p1.Y;
+        line.Y2 = p2.Y;
+
+        return line;
+    }
+
     private async IAsyncEnumerable<(Point start, Point end)> KeepRunning(Point startPoint)
     {
-        List<PositionInfo> potentialTrainData = new List<PositionInfo>();
+        var potentialTrainData = new List<PositionInfo>();
         PredictionEngine<PositionInfo, PositionInfoAnglePrediction> predictionEngine = Train();
         Point currentPoint = startPoint;
         bool intersects;
@@ -83,7 +97,7 @@ public sealed class LinearRegressionRunner
                     angle = this.lastIntersectingPositionInfo.AngleInDegrees;
                 }
 
-                angle += (5 * angleModificator);
+                angle += 5 * angleModificator;
                 positionInfo.AngleInDegrees = angle;
                 potentialTrainData.Add(positionInfo);
 
@@ -114,8 +128,8 @@ public sealed class LinearRegressionRunner
         IDataView data = this.mlContext.Data.LoadFromEnumerable(this.trainData);
 
         // Define data preparation estimator
-        var pipelineEstimator =
-            this.mlContext.Transforms.Concatenate("Features", new string[] { nameof(PositionInfo.DistanceFront), nameof(PositionInfo.Direction) })
+        EstimatorChain<RegressionPredictionTransformer<PoissonRegressionModelParameters>>? pipelineEstimator =
+            this.mlContext.Transforms.Concatenate("Features", nameof(PositionInfo.DistanceFront), nameof(PositionInfo.Direction))
                 .Append(this.mlContext.Transforms.NormalizeMinMax("Features"))
                 .Append(this.mlContext.Regression.Trainers.LbfgsPoissonRegression());
 
@@ -133,7 +147,7 @@ public sealed class LinearRegressionRunner
 
         point = rotatedPoint;
 
-        var line = CreateLine(currentPoint, point, 2);
+        Line line = CreateLine(currentPoint, point, 2);
         bool intersects = this.trackLines.Any(l => GeometryOperations.Intersect(line, l) != null);
 
         return (point, rotatedPointVector, intersects);
@@ -148,13 +162,13 @@ public sealed class LinearRegressionRunner
         };
 
         Vector frontDirection = point - currentPoint;
-        Vector leftDirection = new Vector(frontDirection.Y, -frontDirection.X);
-        Vector rightDirection = new Vector(-frontDirection.Y, frontDirection.X);
+        var leftDirection = new Vector(frontDirection.Y, -frontDirection.X);
+        var rightDirection = new Vector(-frontDirection.Y, frontDirection.X);
 
         float leftDistance = float.MaxValue;
         float rightDistance = float.MaxValue;
 
-        foreach (var l in this.trackLines)
+        foreach (Line l in this.trackLines)
         {
             float? frontDistance = GeometryOperations.GetRayToLineIntersectionDistance(currentPoint, frontDirection, l);
             if (frontDistance.HasValue && frontDistance.Value < info.DistanceFront)
@@ -181,17 +195,5 @@ public sealed class LinearRegressionRunner
         }
 
         return info;
-    }
-
-    private static Line CreateLine(Point p1, Point p2, double thickness)
-    {
-        var line = new Line();
-        line.StrokeThickness = thickness;
-        line.X1 = p1.X;
-        line.X2 = p2.X;
-        line.Y1 = p1.Y;
-        line.Y2 = p2.Y;
-
-        return line;
     }
 }

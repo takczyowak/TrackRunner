@@ -18,8 +18,8 @@ public static class GeometryOperations
 
         if (s >= 0 && s <= 1 && t >= 0 && t <= 1)
         {
-            double intersectionPointX = l1.X1 + (t * firstLineSlopeX);
-            double intersectionPointY = l1.Y1 + (t * firstLineSlopeY);
+            double intersectionPointX = l1.X1 + t * firstLineSlopeX;
+            double intersectionPointY = l1.Y1 + t * firstLineSlopeY;
 
             return new Point(intersectionPointX, intersectionPointY);
         }
@@ -27,24 +27,27 @@ public static class GeometryOperations
         return null; // No collision
     }
 
-    public static float? GetRayToLineIntersectionDistance(Point rayOrigin, Vector rayDirection, Line line) 
+    public static float? GetRayToLineIntersectionDistance(Point rayOrigin, Vector rayDirection, Line line)
     {
         var p1 = new Point(line.X1, line.Y1);
         var p2 = new Point(line.X2, line.Y2);
-        var v1 = rayOrigin - p1;
-        var v2 = p2 - p1;
+        Vector v1 = rayOrigin - p1;
+        Vector v2 = p2 - p1;
         var v3 = new Vector(-rayDirection.Y, rayDirection.X);
 
-
-        var dot = v2 * v3;
+        double dot = v2 * v3;
         if (Math.Abs(dot) < 0.000001)
+        {
             return null;
+        }
 
-        var t1 = Vector.CrossProduct(v2, v1) / dot;
-        var t2 = (v1 * v3) / dot;
+        double t1 = Vector.CrossProduct(v2, v1) / dot;
+        double t2 = v1 * v3 / dot;
 
-        if (t1 >= 0.0 && (t2 >= 0.0 && t2 <= 1.0))
+        if (t1 >= 0.0 && t2 >= 0.0 && t2 <= 1.0)
+        {
             return (float?)t1;
+        }
 
         return null;
     }
