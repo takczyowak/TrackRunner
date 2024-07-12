@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using TrackRunner.Runners.Genetic;
 using TrackRunner.Runners.LinearRegression;
 
 namespace TrackRunner;
@@ -12,14 +13,18 @@ public partial class MainWindow : Window
     private Point startPoint;
     private Point? firstPosition;
     private Point? lastPosition;
+    private Point? lastCheckpointPosition;
     private List<Line> trackLines = new();
     private List<Line> pathLines = new();
-    private LinearRegressionRunner linearRegressionRunner = new();
+    private List<Line> checkpoints = new();
+
+    //private LinearRegressionRunner linearRegressionRunner = new();
+    private GeneticRunner geneticRunner;
 
     public MainWindow()
     {
         InitializeComponent();
-        this.linearRegressionRunner.Collision += OnLinearRegressionRunnerCollision;
+        //this.linearRegressionRunner.Collision += OnLinearRegressionRunnerCollision;
     }
 
     private static Line CreateLine(Point p1, Point p2, double thickness, Color color)
@@ -51,9 +56,25 @@ public partial class MainWindow : Window
 
     private void OnViewportMouseDown(object sender, MouseButtonEventArgs e)
     {
+        Point position = e.GetPosition(viewport);
         if (e.LeftButton == MouseButtonState.Pressed)
         {
-            Point position = e.GetPosition(viewport);
+            if (Keyboard.IsKeyDown(Key.LeftShift))
+            {
+                if (this.lastCheckpointPosition.HasValue)
+                {
+                    Line checkpoint = CreateLine(this.lastCheckpointPosition.Value, position, 3, Colors.Red);
+                    this.checkpoints.Add(checkpoint);
+                    this.lastCheckpointPosition = null;
+                    viewport.Children.Add(checkpoint);
+                }
+                else
+                {
+                    this.lastCheckpointPosition = position;
+                }
+
+                return;
+            }
 
             if (position == this.lastPosition)
             {
@@ -88,12 +109,13 @@ public partial class MainWindow : Window
 
         if (e.MiddleButton == MouseButtonState.Pressed)
         {
-            foreach (Line line in this.trackLines)
+            foreach (Line line in this.trackLines.Concat(this.checkpoints))
             {
                 viewport.Children.Remove(line);
             }
 
             this.trackLines.Clear();
+            this.checkpoints.Clear();
             this.firstPosition = null;
             this.lastPosition = null;
         }
@@ -113,12 +135,15 @@ public partial class MainWindow : Window
                     }));
         }
 
-        this.linearRegressionRunner.Start(this.startPoint, this.trackLines, drawLine);
+        this.geneticRunner = new GeneticRunner(this.startPoint, this.trackLines, this.checkpoints, 200, 400, drawLine, ClearPaths);
+        this.geneticRunner.Start();
+        //this.linearRegressionRunner.Start(this.startPoint, this.trackLines, drawLine);
     }
 
     private void OnReset(object sender, RoutedEventArgs e)
     {
-        this.linearRegressionRunner.Stop();
+        //this.linearRegressionRunner.Stop();
+        this.geneticRunner?.Stop();
 
         foreach (Line l in this.pathLines)
         {
@@ -126,7 +151,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnLinearRegressionRunnerCollision(object sender, EventArgs e)
+    private void ClearPaths()
     {
         Application.Current.Dispatcher.Invoke(
             new Action(
@@ -136,6 +161,12 @@ public partial class MainWindow : Window
                     {
                         viewport.Children.Remove(l);
                     }
+                    this.pathLines.Clear();
                 }));
+    }
+
+    private void OnLinearRegressionRunnerCollision(object sender, EventArgs e)
+    {
+        ClearPaths();
     }
 }

@@ -13,7 +13,6 @@ public sealed class LinearRegressionRunner
     private HashSet<PositionInfo> trainData = new();
     private IReadOnlyCollection<(Point start, Point end)> trackLines;
     private bool forceStop;
-    private bool isRunning;
     private PositionInfo lastIntersectingPositionInfo;
     private int lastMaxStep;
 
@@ -32,7 +31,6 @@ public sealed class LinearRegressionRunner
         Task.Run(
             async () =>
             {
-                this.isRunning = true;
                 while (!this.forceStop)
                 {
                     await foreach ((Point start, Point end) in KeepRunning(startPoint))
@@ -42,8 +40,6 @@ public sealed class LinearRegressionRunner
 
                     Collision?.Invoke(this, EventArgs.Empty);
                 }
-
-                this.isRunning = false;
             });
     }
 
