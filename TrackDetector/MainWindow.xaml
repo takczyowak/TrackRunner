@@ -30,9 +30,9 @@
         </Grid>
 
         <Border Grid.Row="1" BorderThickness="8" BorderBrush="Aquamarine" Background="Transparent">
-            <Grid Background="Transparent" x:Name="workspace" Opacity="0">
+            <Canvas Background="Transparent" x:Name="workspace">
 
-            </Grid>
+            </Canvas>
         </Border>
     </Grid>
 </Window>

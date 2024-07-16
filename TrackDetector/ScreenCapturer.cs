@@ -2,45 +2,31 @@
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 using TrackDetector.Win32;
-using Clipboard = System.Windows.Clipboard;
-using DataFormats = System.Windows.DataFormats;
-using DataObject = System.Windows.DataObject;
-using IDataObject = System.Windows.IDataObject;
-using Point = System.Windows.Point;
 
 namespace TrackDetector;
 
 public static class ScreenCapturer
 {
-    public static BitmapSource Capture(Window window, FrameworkElement workspace)
+    public static BitmapSource Capture(Func<WindowInfo> getWindowInfo)
     {
-        int width = (int)workspace.ActualWidth;
-        int height = (int)workspace.ActualHeight;
-
-        var wih = new WindowInteropHelper(window);
-        IntPtr hWnd = wih.Handle;
-        Int32Rect rect = GetWindowActualRect(hWnd);
-
-        WpfScreen screen = WpfScreen.FromPoint(rect.X, rect.Y);
-        Point relativeLocation = workspace.TranslatePoint(new Point(0, 0), window);
+        WindowInfo windowInfo = getWindowInfo();
+        WpfScreen screen = WpfScreen.FromPoint((int)windowInfo.WindowPosition.X, (int)windowInfo.WindowPosition.Y);
 
         BitmapSource captured = CaptureRegion(
             IntPtr.Zero,
-            rect.X + (int)(relativeLocation.X * screen.Scale) + 1,
-            rect.Y + (int)(relativeLocation.Y * screen.Scale) + 1,
-            (int)(width * screen.Scale),
-            (int)(height * screen.Scale),
-            true);
+            (int)windowInfo.WindowPosition.X + (int)(windowInfo.WorkspacePosition.X * screen.Scale) + 1,
+            (int)windowInfo.WindowPosition.Y + (int)(windowInfo.WorkspacePosition.Y * screen.Scale) + 1,
+            (int)(windowInfo.WorkspacePosition.Width * screen.Scale),
+            (int)(windowInfo.WorkspacePosition.Height * screen.Scale));
 
         return captured;
     }
 
-    private static BitmapSource CaptureRegion(IntPtr hWnd, int x, int y, int width, int height, bool addToClipboard)
+    private static BitmapSource CaptureRegion(IntPtr hWnd, int x, int y, int width, int height)
     {
         IntPtr sourceDC = IntPtr.Zero;
         IntPtr targetDC = IntPtr.Zero;
         IntPtr compatibleBitmapHandle = IntPtr.Zero;
-        BitmapSource bitmap = null;
 
         try
         {
@@ -53,18 +39,7 @@ public static class ScreenCapturer
 
             Gdi32.BitBlt(targetDC, 0, 0, width, height, sourceDC, x, y, Gdi32.SRCCOPY);
 
-            bitmap = Imaging.CreateBitmapSourceFromHBitmap(
-                compatibleBitmapHandle,
-                IntPtr.Zero,
-                Int32Rect.Empty,
-                BitmapSizeOptions.FromEmptyOptions());
-
-            if (addToClipboard)
-            {
-                IDataObject data = new DataObject();
-                data.SetData(DataFormats.Dib, bitmap, false);
-                Clipboard.SetDataObject(data, false);
-            }
+            return Imaging.CreateBitmapSourceFromHBitmap(compatibleBitmapHandle, IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
         }
         catch (Exception ex)
         { }
@@ -76,10 +51,10 @@ public static class ScreenCapturer
             User32.ReleaseDC(IntPtr.Zero, targetDC);
         }
 
-        return bitmap;
+        return null;
     }
 
-    private static Int32Rect GetWindowActualRect(IntPtr hWnd)
+    public static Int32Rect GetWindowActualRect(IntPtr hWnd)
     {
         User32.GetWindowRect(hWnd, out Win32Rect windowRect);
         User32.GetClientRect(hWnd, out Win32Rect clientRect);
