@@ -18,6 +18,7 @@ public partial class MainWindow
 {
     private List<Rectangle> boxes;
     private WindowInfo windowInfo;
+    private WpfScreen monitor;
 
     public MainWindow()
     {
@@ -88,7 +89,7 @@ public partial class MainWindow
                 {
                     if(output.Score[i] > 0.9)
                     {
-                        boundingBoxes.AddRange(output.PredictedBoundingBoxes.Skip(i*4).Take(4).Select(p => (int)p));
+                        boundingBoxes.AddRange(output.PredictedBoundingBoxes.Skip(i*4).Take(4).Select(p => (int)(p / monitor.Scale)));
                     }
                 }
 
@@ -108,6 +109,8 @@ public partial class MainWindow
         Point relativeLocation = workspace.TranslatePoint(new Point(0, 0), this);
 
         this.windowInfo = new WindowInfo(rect, new Rect(relativeLocation, new Size(workspace.ActualWidth, workspace.ActualHeight)));
+
+        monitor = WpfScreen.FromPoint((int)windowInfo.WindowPosition.X, (int)windowInfo.WindowPosition.Y);
     }
 
     private void OnCloseWindowClick(object sender, RoutedEventArgs e)
